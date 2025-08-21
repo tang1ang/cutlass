@@ -595,7 +595,7 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major != 8 props.minor != 9) {
+  if (props.major != 8 && props.minor != 9) {
     std::cerr
       << "This example requires a GPU of NVIDIA's Ada Architecture or "
       << "later (compute capability 89).\n";
