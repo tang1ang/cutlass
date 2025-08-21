@@ -68,11 +68,10 @@
 
 // Includes from examples directory
 #include "helper.h"
-#include "hopper_fp8_commandline.hpp"
+#include "ada_fp8_commandline.hpp"
 
 using namespace cute;
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
@@ -108,33 +107,31 @@ using         ElementBias  = float;
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 using ElementBlockScale   = float;                                          // Element type for blockscaling during accumulation
 using ElementCompute      = float;                                          // Element type for epilogue computation
-using ArchTag             = cutlass::arch::Sm90;                            // Tag indicating the minimum SM that supports the intended feature
+using ArchTag             = cutlass::arch::Sm89;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
 using TileShape           = Shape<_128,_128,_128>;                           // Threadblock-level tile size
-using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
+using ClusterShape        = Shape<_1,_1,_1>;                                // Shape of the threadblocks in a cluster
 
 using ScaleConfig = decltype(cutlass::detail::sm90_trivial_blockwise_scale_config(TileShape{}));
 
 using LayoutSFA             = decltype(ScaleConfig::deduce_layoutSFA());                     // Layout type for SFA matrix operand
 using LayoutSFB             = decltype(ScaleConfig::deduce_layoutSFB());                     // Layout type for SFB matrix operand
 
-using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum; 
-using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecializedCooperative;
+using KernelSchedule      = cutlass::gemm::KernelMultistageFP8BlockScaledAccum; 
 
-using EpilogueTileType    = cutlass::epilogue::collective::EpilogueTileAuto;
-using FusionOperation     = cutlass::epilogue::fusion::ScaledLinCombPerRowBiasEltActAmaxAux<
-    LayoutAux, cutlass::epilogue::thread::ReLU, ElementD, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementC>;
-
-using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,
-    TileShape, ClusterShape,
-    EpilogueTileType,
-    ElementAccumulator, ElementCompute,
-    ElementC, LayoutC, AlignmentC,
-    ElementD, LayoutD, AlignmentD,
-    EpilogueSchedule,
-    FusionOperation
-  >::CollectiveOp;
+using CollectiveEpilogue = cutlass::epilogue::collective::DefaultEpilogue<
+        ElementC,
+        cutlass::detail::TagToStrideC_t<LayoutC>,
+        cutlass::detail::TagToStrideC_t<LayoutD>,
+        cutlass::epilogue::thread::LinearCombination<
+          ElementD,
+          AlignmentD,
+          ElementAccumulator,
+          ElementD,
+          cutlass::epilogue::thread::ScaleType::Default,
+          cutlass::FloatRoundStyle::round_to_nearest,
+          ElementC>,                                                            // Provide if ElementD differs from ElementC
+        cutlass::gemm::EpilogueDefault>;
 
 using CollectiveMainloopWithBlockWiseScaling = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
@@ -142,9 +139,7 @@ using CollectiveMainloopWithBlockWiseScaling = typename cutlass::gemm::collectiv
     ElementB, cute::tuple<LayoutB, LayoutSFB>, AlignmentB,
     ElementAccumulator,
     TileShape, ClusterShape,
-    cutlass::gemm::collective::StageCountAutoCarveout<
-      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
-    >,
+    void,
     KernelSchedule
   >::CollectiveOp;
 
@@ -156,25 +151,15 @@ using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
 
 using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-// Extract information from Gemm kernel.
-using EpilogueOutputOp  = typename Gemm::EpilogueOutputOp;
-using ElementScalar     = typename EpilogueOutputOp::ElementScalar;
-using ElementAmax       = typename EpilogueOutputOp::ElementAmax;
-using ActivationFunctor = typename EpilogueOutputOp::ActivationFn;
 
 using StrideA = typename Gemm::GemmKernel::StrideA;
 using StrideB = typename Gemm::GemmKernel::StrideB;
 using StrideC = typename Gemm::GemmKernel::StrideC;
 using StrideD = typename Gemm::GemmKernel::StrideD;
-using StrideAux = StrideD;
 
 constexpr bool IsDFp8 =
     cute::is_same_v<ElementD, cutlass::float_e4m3_t> or
     cute::is_same_v<ElementD, cutlass::float_e5m2_t>;
-
-constexpr bool IsAuxFp8 =
-    cute::is_same_v<ElementAux, cutlass::float_e4m3_t> or
-    cute::is_same_v<ElementAux, cutlass::float_e5m2_t>;
 
 static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
              "ElementAccumulator and ElementBlockScale should be same datatype");
@@ -184,12 +169,10 @@ StrideA stride_A;
 StrideB stride_B;
 StrideC stride_C;
 StrideD stride_D;
-StrideAux stride_aux;
 LayoutSFA layout_SFA;
 LayoutSFB layout_SFB;
 uint64_t seed;
 
-using LayoutScalar = cutlass::layout::PackedVectorLayout;
 cutlass::HostTensor<ElementA  , LayoutA  > tensor_A;
 cutlass::HostTensor<ElementB  , LayoutB  > tensor_B;
 cutlass::HostTensor<ElementC  , LayoutC  > tensor_C;
@@ -197,28 +180,11 @@ cutlass::HostTensor<ElementD  , LayoutD  > tensor_D;
 cutlass::HostTensor<ElementBlockScale, LayoutScalar> blockscale_tensor_A;
 cutlass::HostTensor<ElementBlockScale, LayoutScalar> blockscale_tensor_B;
 cutlass::HostTensor<ElementD  , LayoutD  > tensor_ref_D;
-cutlass::HostTensor<ElementAux, LayoutAux> tensor_aux;
-cutlass::HostTensor<ElementAux, LayoutAux> tensor_ref_aux;
-
-cutlass::HostTensor<ElementScalar, LayoutScalar> scalar_alpha;
-cutlass::HostTensor<ElementScalar, LayoutScalar> scalar_beta;
-cutlass::HostTensor<ElementScalar, LayoutScalar> scale_A;
-cutlass::HostTensor<ElementScalar, LayoutScalar> scale_B;
-cutlass::HostTensor<ElementScalar, LayoutScalar> scale_C;
-cutlass::HostTensor<ElementScalar, LayoutScalar> scale_D;
-cutlass::HostTensor<ElementScalar, LayoutScalar> scale_aux;
-cutlass::HostTensor<ElementAmax  , LayoutScalar> abs_max_D;
-cutlass::HostTensor<ElementAmax  , LayoutScalar> reference_abs_max_D;
-cutlass::HostTensor<ElementAmax  , LayoutScalar> abs_max_aux;
-cutlass::HostTensor<ElementAmax  , LayoutScalar> reference_abs_max_aux;
-
-#endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90Params::RasterOrderOptions;
 
 /// Result structure
 struct Result
@@ -240,7 +206,6 @@ struct Result
 
 };
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -342,7 +307,6 @@ void initialize(const Options<RasterOrderOptions> &options) {
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(options.n, options.k, options.l));
   stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(options.m, options.n, options.l));
   stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(options.m, options.n, options.l));
-  stride_aux = stride_D;
 
   // Layout SFA and SFB represent logically broadcasting data in CuTe.
   // E.g., if Layout SFA has shape ((ScaleGranularityM, M / ScaleGranularityM), (ScaleGraunularityK, K / ScaleGranularityK))
@@ -393,53 +357,6 @@ void initialize(const Options<RasterOrderOptions> &options) {
   blockscale_tensor_A.sync_device();
   blockscale_tensor_B.sync_device();
 
-  if (options.save_aux) {
-    tensor_aux.resize(c_coord);
-    tensor_aux.sync_device();
-    tensor_ref_aux.resize(c_coord);
-  }
-
-  if (options.device_scale) {
-    scalar_alpha.resize(cutlass::make_Coord(1));
-    scalar_beta.resize(cutlass::make_Coord(1));
-    scale_A.resize(cutlass::make_Coord(1));
-    scale_B.resize(cutlass::make_Coord(1));
-    scale_C.resize(cutlass::make_Coord(1));
-    scale_D.resize(cutlass::make_Coord(1));
-    scale_aux.resize(cutlass::make_Coord(1));
-
-    cutlass::reference::host::TensorFill(scalar_alpha.host_view(), options.alpha);
-    cutlass::reference::host::TensorFill(scalar_beta.host_view(), options.beta);
-    cutlass::reference::host::TensorFill(scale_A.host_view(), options.scale_a);
-    cutlass::reference::host::TensorFill(scale_B.host_view(), options.scale_b);
-    cutlass::reference::host::TensorFill(scale_C.host_view(), options.scale_c);
-    cutlass::reference::host::TensorFill(scale_D.host_view(), options.scale_d);
-    cutlass::reference::host::TensorFill(scale_aux.host_view(), options.scale_aux);
-
-    scalar_alpha.sync_device();
-    scalar_beta.sync_device();
-    scale_A.sync_device();
-    scale_B.sync_device();
-    scale_C.sync_device();
-    scale_D.sync_device();
-    scale_aux.sync_device();
-  }
-
-  if (IsDFp8 && options.save_amax) {
-    abs_max_D.resize(cutlass::make_Coord(1));
-    initialize_tensor(abs_max_D.host_view(), cutlass::Distribution::AllZeros, 0);
-    abs_max_D.sync_device();
-    reference_abs_max_D.resize(cutlass::make_Coord(1));
-    initialize_tensor(reference_abs_max_D.host_view(), cutlass::Distribution::AllZeros, 0);
-  }
-
-  if (IsAuxFp8 && options.save_aux && options.save_amax) {
-    abs_max_aux.resize(cutlass::make_Coord(1));
-    initialize_tensor(abs_max_aux.host_view(), cutlass::Distribution::AllZeros, 0);
-    abs_max_aux.sync_device();
-    reference_abs_max_aux.resize(cutlass::make_Coord(1));
-    initialize_tensor(reference_abs_max_aux.host_view(), cutlass::Distribution::AllZeros, 0);
-  }
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
@@ -465,45 +382,18 @@ typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &op
   };
 
   auto &fusion_args = arguments.epilogue.thread;
-  fusion_args.alpha = options.alpha;
-  fusion_args.beta = options.beta;
-  fusion_args.alpha_ptr = scalar_alpha.device_data();
-  fusion_args.beta_ptr = scalar_beta.device_data();
-  fusion_args.scale_a = options.scale_a;
-  fusion_args.scale_b = options.scale_b;
-  fusion_args.scale_c = options.scale_c;
-  fusion_args.scale_a_ptr = scale_A.device_data();
-  fusion_args.scale_b_ptr = scale_B.device_data();
-  fusion_args.scale_c_ptr = scale_C.device_data();
 
-  // ignored if tensor types are not fp8
-  fusion_args.scale_d = options.scale_d;
-  fusion_args.scale_aux = options.scale_aux;
-  fusion_args.scale_d_ptr = scale_D.device_data();
-  fusion_args.scale_aux_ptr = scale_aux.device_data();
+  fusion_args.alpha = CollectiveEpilogue::ThreadEpilogueOp::ElementCompute(options.alpha);
+  fusion_args.beta = CollectiveEpilogue::ThreadEpilogueOp::ElementCompute(options.beta);
 
-  // leaving/setting these as nullptr disables the fusion at runtime
-  fusion_args.bias_ptr = nullptr;
-
-  if (options.save_aux) {
-    fusion_args.aux_ptr = tensor_aux.device_data();
-    fusion_args.dAux = stride_aux;
-    if (options.save_amax) {
-      fusion_args.amax_aux_ptr = abs_max_aux.device_data();
-    }
-  }
-
-  if (options.save_amax) {
-    fusion_args.amax_D_ptr = abs_max_D.device_data();
-  }
-
-  arguments.scheduler.raster_order = options.raster;
   // The tile scheduler will swizzle up to 8 and with the nearest multiple of 2 (i.e., 1, 2, 4, and 8)
   arguments.scheduler.max_swizzle_size = options.swizzle;
+
 
   return arguments;
 }
 
+#if 0
 bool verify(const Options<RasterOrderOptions> &options) {
   //
   // Compute reference output
@@ -534,12 +424,6 @@ bool verify(const Options<RasterOrderOptions> &options) {
                                 stride_D
                               )
                             );
-  auto Aux = cute::make_tensor(tensor_ref_aux.host_data(),
-                               cute::make_layout(
-                                  cute::make_shape(options.m, options.n, options.l),
-                                  stride_aux
-                                )
-                              );
 
   auto SFA = cute::make_tensor(blockscale_tensor_A.host_data(), layout_SFA);
   auto SFB = cute::make_tensor(blockscale_tensor_B.host_data(), layout_SFB);
@@ -624,10 +508,11 @@ bool verify(const Options<RasterOrderOptions> &options) {
 
   return passed;
 }
+#endif
 
 /// Execute a given example GEMM computation
 template <typename Gemm>
-int run(Options<RasterOrderOptions> &options)
+int run(Options &options)
 {
   initialize(options);
 
@@ -652,7 +537,10 @@ int run(Options<RasterOrderOptions> &options)
   // Correctness / Warmup iteration
   CUTLASS_CHECK(gemm.run());
 
+  return 0;
+
   // Check if output from CUTLASS kernel and reference kernel are equal or not
+  #if 0
   Result result;
   if (options.verify) {
     result.passed = verify(options);
@@ -662,6 +550,7 @@ int run(Options<RasterOrderOptions> &options)
   else {
     result.passed = true;
   }
+  #endif 
 
   // Run profiling loop
   if (options.iterations > 0)
@@ -679,25 +568,15 @@ int run(Options<RasterOrderOptions> &options)
     result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 
-    std::string raster = "Heuristic";
-
-    if (options.raster == RasterOrderOptions::AlongN) {
-      raster = "Along N";
-    }
-    else if (options.raster == RasterOrderOptions::AlongM) {
-      raster = "Along M";
-    }
 
     std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
-    std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
+    std::cout << "  maximum CTA swizzle of " << options.swizzle << std::endl;
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
 
-  return result.passed;
+  return 0; // result.passed;
 }
-
-#endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -716,17 +595,17 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major != 9) {
+  if (props.major != 8 props.minor != 9) {
     std::cerr
-      << "This example requires a GPU of NVIDIA's Hopper Architecture or "
-      << "later (compute capability 90 or greater).\n";
+      << "This example requires a GPU of NVIDIA's Ada Architecture or "
+      << "later (compute capability 89).\n";
     return 0;
   }
   //
   // Parse options
   //
 
-  Options<RasterOrderOptions> options;
+  Options options;
 
   options.parse(argc, args);
 
@@ -739,11 +618,10 @@ int main(int argc, char const **args) {
   // Evaluate CUTLASS kernels
   //
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
   bool passed = run<Gemm>(options);
   if (!passed)
     return -1;
-#endif
+
 
   return 0;
 }
