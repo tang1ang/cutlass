@@ -39,6 +39,7 @@
 #include "cute/numeric/arithmetic_tuple.hpp"
 #include "cute/arch/copy_sm80.hpp"
 #include "cutlass/detail/blockwise_scale_layout.hpp"
+#include "cutlass/gemm/collective/fp8_accumulation.hpp"
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
