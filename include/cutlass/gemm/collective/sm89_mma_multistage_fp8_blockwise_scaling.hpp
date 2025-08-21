@@ -50,7 +50,6 @@ using namespace cute;
 
 template <
   int Stages,
-  class ClusterShape_,
   class TileShape_,
   class ElementA_,
   class StridePairA_,
@@ -87,9 +86,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm80CpAsync<
-                          Stages,
-                          ClusterShape_>;
+  using DispatchPolicy = MainloopSm89CpAsyncBlockScalingFP8<Stages>;
   using TileShape = TileShape_;
   // Follow the change in TestSmall: TileShape switch to CtaShape
   // In legacy arch, it should be same
