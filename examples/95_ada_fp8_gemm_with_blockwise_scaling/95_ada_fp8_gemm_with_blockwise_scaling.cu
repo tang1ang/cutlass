@@ -152,10 +152,6 @@ using StrideB = typename Gemm::GemmKernel::StrideB;
 using StrideC = typename Gemm::GemmKernel::StrideC;
 using StrideD = typename Gemm::GemmKernel::StrideD;
 
-constexpr bool IsDFp8 =
-    cute::is_same_v<ElementD, cutlass::float_e4m3_t> or
-    cute::is_same_v<ElementD, cutlass::float_e5m2_t>;
-
 static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
              "ElementAccumulator and ElementBlockScale should be same datatype");
 

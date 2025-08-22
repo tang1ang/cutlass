@@ -72,6 +72,9 @@ struct CollectiveBuilder<
   static constexpr int WARP_N = 2;
   static constexpr int NUM_WARPS = WARP_M * WARP_N;
   static constexpr int NUM_THREADS = NUM_WARPS * 32;
+  static constexpr int MMA_WARP_M = WARP_M * 16;
+  static constexpr int MMA_WARP_N = WARP_N * 16;
+  static constexpr int MMA_WARP_K = 32;
 
   using GmemLayoutATag   = cute::remove_cvref_t<decltype(get<0>(GmemLayoutPairA{}))>;
   using GmemLayoutSFATag = cute::remove_cvref_t<decltype(get<1>(GmemLayoutPairA{}))>;
@@ -100,7 +103,8 @@ struct CollectiveBuilder<
   static constexpr cute::GMMA::Major GmmaMajorA = detail::gmma_ss_tag_to_major_A<ElementAMma, GmemLayoutATag>();
   static constexpr cute::GMMA::Major GmmaMajorB = detail::gmma_ss_tag_to_major_B<ElementBMma, GmemLayoutBTag>();
 
-  using TiledMma = decltype(cute::make_tiled_mma(cute::SM89_16x8x32_F32E4M3E4M3F32_TN{}, Layout<Shape<Int<WARP_M>, Int<WARP_N>, _1>>{}));
+  using TiledMma = decltype(cute::make_tiled_mma(cute::SM89_16x8x32_F32E4M3E4M3F32_TN{}, Layout<Shape<Int<WARP_M>, Int<WARP_N>, _1>>{},
+      Tile<Int<MMA_WARP_M>, Int<MMA_WARP_N>, Int<MMA_WARP_K>>));
 
   
   using AlignmentTypeA = cute::uint_byte_t<static_cast<int>(sizeof(ElementA)) * AlignmentA>;
