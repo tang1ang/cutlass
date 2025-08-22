@@ -239,17 +239,34 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
     int  k_tile_count = size<2>(gA);
 
     // Perform the collective scoped MMA
-    CollectiveMainloop collective_mma(params.mainloop);
-    collective_mma(
-      accumulators,
-      gA,
-      gB,
-      accumulators,
-      k_tile_iter, k_tile_count,
-      residue_mnk,
-      thread_idx,
-      smem_buf
-    );
+
+    if constexpr (cute::is_same_v<CollectiveMainloop::DispatchPolicy, MainloopSm89CpAsyncBlockScalingFP8<CollectiveMainloop::DispatchPolicy::Stages>>) {
+
+      CollectiveMainloop collective_mma(params.mainloop);
+      collective_mma(
+        accumulators,
+        gA,
+        gB,
+        accumulators,
+        k_tile_iter, k_tile_count,
+        residue_mnk,
+        thread_idx,
+        smem_buf
+      );
+    } else {
+
+      CollectiveMainloop collective_mma();
+      collective_mma(
+        accumulators,
+        gA,
+        gB,
+        accumulators,
+        k_tile_iter, k_tile_count,
+        residue_mnk,
+        thread_idx,
+        smem_buf
+      );
+    }
     // Epilogue and write to gD
     CollectiveEpilogue epilogue{params.epilogue};
     epilogue(
