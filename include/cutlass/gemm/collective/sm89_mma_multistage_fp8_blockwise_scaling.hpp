@@ -211,13 +211,13 @@ struct CollectiveMma<
   >
   CUTLASS_DEVICE
   void scale_if_needed(GmmaFP8Accumulation<EngineAccum, LayoutAccum>& accumulation, ScaleFactor scaleFactor) {
-    // if constexpr (ScalePromotionInterval != 4) {
-    //   accumulation.scale_if_needed(scaleFactor);
-    // }
-    // else {
+    if constexpr (ScalePromotionInterval != 4) {
+      accumulation.scale_if_needed(scaleFactor);
+    }
+    else {
       // avoid unnecessary tests when granularity is the finnest
       accumulation.scale(scaleFactor);
-    //}
+    }
   }
   template<
     class EngineAccum,
@@ -227,13 +227,13 @@ struct CollectiveMma<
   >
   CUTLASS_DEVICE
   void scale_if_needed(GmmaFP8Accumulation<EngineAccum, LayoutAccum>& accumulation, ScaleFactor1 scaleFactor1, ScaleFactor2 scaleFactor2) {
-    // if constexpr (ScalePromotionInterval != 4) {
-    //   accumulation.scale_if_needed(scaleFactor1, scaleFactor2);
-    // }
-    // else {
-      // avoid unnecessary tests when granularity is the finnest
+    if constexpr (ScalePromotionInterval != 4) {
+      accumulation.scale_if_needed(scaleFactor1, scaleFactor2);
+    }
+    else {
+      //avoid unnecessary tests when granularity is the finnest
       accumulation.scale(scaleFactor1, scaleFactor2);
-    //}
+    }
   }
 
 
@@ -524,6 +524,7 @@ struct CollectiveMma<
     GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
     //Tensor tCrAccum = cute::make_fragment_like(accum);              // (MMA_M,MMA_N)
     //clear(tCrAccum);
+    clear(accumulation());
 
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > -(DispatchPolicy::Stages-1); --k_tile_count)
@@ -531,8 +532,15 @@ struct CollectiveMma<
       // Pipeline the outer products with a static for loop.
       //
       // Note, the for_each() function is required here to ensure `k_block` is of type Int<N>.
-
-      clear(accumulation());
+      if constexpr (ScalePromotionInterval != 4) {
+        if (accumulation.prepare_if_needed()) {
+          clear(accumulation());
+        }
+      }
+      else {
+        // Always zero out the accumulator for finest granularity
+        clear(accumulation());
+      }
 
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
       {
