@@ -521,7 +521,9 @@ struct CollectiveMma<
       copy(smem_tiled_copy_B, tCsB_p(_,_,Int<0>{}), tCrB_copy_view(_,_,Int<0>{}));
     }
 
-    GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
+    //GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
+    Tensor tCrAccum = cute::make_fragment_like(accum);              // (MMA_M,MMA_N)
+    clear(tCrAccum);
 
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > -(DispatchPolicy::Stages-1); --k_tile_count)
@@ -530,7 +532,7 @@ struct CollectiveMma<
       //
       // Note, the for_each() function is required here to ensure `k_block` is of type Int<N>.
 
-      warpgroup_fence_operand(accumulation());
+      //warpgroup_fence_operand(accumulation());
 
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
       {
@@ -545,23 +547,23 @@ struct CollectiveMma<
           __syncthreads();
 
           // calculate the scale factor, overlap with last k mma
-          if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-            tCrSFA(_0{}) = tCrSFA(_0{}) * tCrSFB(_0{});
-          }
-          if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-            ElementBlockScale scale_b = tCrSFB(_0{});
-            CUTLASS_PRAGMA_UNROLL
-            for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
-              filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
-            }
-          }
-          if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-            ElementBlockScale scale_a = tCrSFA(_0{});
-            CUTLASS_PRAGMA_UNROLL
-            for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
-              filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
-            }
-          }
+          // if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
+          //   tCrSFA(_0{}) = tCrSFA(_0{}) * tCrSFB(_0{});
+          // }
+          // if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
+          //   ElementBlockScale scale_b = tCrSFB(_0{});
+          //   CUTLASS_PRAGMA_UNROLL
+          //   for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
+          //     filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
+          //   }
+          // }
+          // if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
+          //   ElementBlockScale scale_a = tCrSFA(_0{});
+          //   CUTLASS_PRAGMA_UNROLL
+          //   for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
+          //     filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
+          //   }
+          // }
         }
 
         // Load A, B shmem->regs for k_block+1
@@ -598,25 +600,66 @@ struct CollectiveMma<
         cute::transform(tCrA(_,_,k_block), TransformA{});
         cute::transform(tCrB(_,_,k_block), TransformB{});
         // Thread-level register gemm for k_block
-        cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), accumulation());
+        cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrAccum);
       });
 
-      warpgroup_fence_operand(accumulation());
+      //warpgroup_fence_operand(accumulation());
       
 
-      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrSFA(_0{});
-        scale_if_needed(accumulation, scale_ab);
+      // if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
+      //   ElementBlockScale scale_ab = tCrSFA(_0{});
+      //   scale_if_needed(accumulation, scale_ab);
+      // }
+      // if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
+      //   scale_if_needed(accumulation, tCrSFA);
+      // }
+      // if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
+      //   scale_if_needed(accumulation, tCrSFB);
+      // }
+      // if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
+      //   scale_if_needed(accumulation, tCrSFA, tCrSFB);
+      // }
+
+     if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
+        ElementBlockScale scale_ab = tCrSFA(_0{}) * tCrSFB(_0{});
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(accum); ++i) {
+          accum(i) += tCrAccum(i) * scale_ab;
+          tCrAccum(i) = 0;
+        }
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        scale_if_needed(accumulation, tCrSFA);
+        ElementBlockScale scale_b = tCrSFB(_0{});
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
+          filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
+        }
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(accum); ++i) {
+          accum(i) += tCrAccum(i) * tCrSFA(i);
+          tCrAccum(i) = 0;
+        }
       }
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrSFB);
+        ElementBlockScale scale_a = tCrSFA(_0{});
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
+          filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
+        }
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(accum); ++i) {
+          accum(i) += tCrAccum(i) * tCrSFB(i);
+          tCrAccum(i) = 0;
+        }
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrSFA, tCrSFB);
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(accum); ++i) {
+          accum(i) += tCrAccum(i) * tCrSFA(i) * tCrSFB(i);
+          tCrAccum(i) = 0;
+        }
       }
+    
     }
 
     cp_async_wait<0>();
