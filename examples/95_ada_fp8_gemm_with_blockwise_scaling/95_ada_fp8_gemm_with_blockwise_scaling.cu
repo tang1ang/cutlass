@@ -35,9 +35,7 @@
 
     Examples:
       $ ./examples/95_ada_fp8_gemm_with_blockwise_scaling  \
-        --m=2816 --n=3072 --k=16384 \
-        --save_aux=false --save_amax=false \
-        --device_scale=false --raster=h --swizzle=2
+        --m=1024 --n=1024 --k=1024  --swizzle=2
 */
 
 #include <iostream>
@@ -386,7 +384,7 @@ typename Gemm::Arguments args_from_options(const Options &options)
   return arguments;
 }
 
-#if 0
+
 bool verify(const Options &options) {
   //
   // Compute reference output
@@ -432,14 +430,14 @@ bool verify(const Options &options) {
     > mainloop_params{A, SFA, B, SFB};
 
   cutlass::reference::host::GettEpilogueParams<
-      ElementScalar,
-      ElementScalar,
-      ElementAccumulator,
-      ElementCompute,
+      CollectiveEpilogue::ThreadEpilogueOp::ElementCompute,
+      CollectiveEpilogue::ThreadEpilogueOp::ElementCompute,
+      CollectiveEpilogue::ThreadEpilogueOp::ElementAccumulator,
+      CollectiveEpilogue::ThreadEpilogueOp::ElementCompute,
       decltype(C),
       decltype(D),
       unused_t, // bias
-      decltype(Aux),
+      unused_t,
       unused_t, // valpha
       unused_t, // vbeta
       ActivationFunctor
@@ -447,16 +445,8 @@ bool verify(const Options &options) {
 
   epilogue_params.C = C;
   epilogue_params.D = D;
-  epilogue_params.Aux = Aux;
-  epilogue_params.alpha = options.alpha;
-  epilogue_params.beta = options.beta;
-  epilogue_params.scale_a = options.scale_a;
-  epilogue_params.scale_b = options.scale_b;
-  epilogue_params.scale_c = options.scale_c;
-  epilogue_params.scale_d = options.scale_d;
-  epilogue_params.scale_aux = options.scale_aux;
-  epilogue_params.abs_max_D = reference_abs_max_D.host_data();
-  epilogue_params.abs_max_Aux = reference_abs_max_aux.host_data();
+  epilogue_params.alpha = CollectiveEpilogue::ThreadEpilogueOp::ElementCompute(options.alpha);
+  epilogue_params.beta = CollectiveEpilogue::ThreadEpilogueOp::ElementCompute(options.beta);
 
   // get reference result
   cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
@@ -464,7 +454,7 @@ bool verify(const Options &options) {
   // compare_reference
   bool passed = true;
   tensor_D.sync_host();
-  passed &= cutlass::reference::host::TensorRelativelyEquals(tensor_D.host_view(), tensor_ref_D.host_view(), ElementAux(options.epsilon), ElementAux(options.non_zero_floor));
+  passed &= cutlass::reference::host::TensorRelativelyEquals(tensor_D.host_view(), tensor_ref_D.host_view(), ElementD(options.epsilon), ElementD(options.non_zero_floor));
   double mse = cutlass::reference::host::TensorMSE(tensor_D.host_view(), tensor_ref_D.host_view());
   double mre = cutlass::reference::host::TensorMRE(tensor_D.host_view(), tensor_ref_D.host_view());
   double max_error = cutlass::reference::host::TensorGreatestError(tensor_D.host_view(), tensor_ref_D.host_view());
@@ -479,29 +469,8 @@ bool verify(const Options &options) {
             << "}"  << std::endl;
 #endif
 
-  if (IsDFp8 && options.save_amax) {
-    abs_max_D.sync_host();
-    std::cout << "  Abs max D: " << abs_max_D.at(cutlass::make_Coord(0)) << ", reference: " << reference_abs_max_D.at(cutlass::make_Coord(0)) << std::endl;
-    passed &= cutlass::relatively_equal(abs_max_D.at(cutlass::make_Coord(0)), reference_abs_max_D.at(cutlass::make_Coord(0)), ElementScalar(options.epsilon), ElementScalar(options.non_zero_floor));
-  }
-
-  if (options.save_aux) {
-    tensor_aux.sync_host();
-    passed &= cutlass::reference::host::TensorRelativelyEquals(tensor_aux.host_view(), tensor_ref_aux.host_view(), ElementAux(options.epsilon), ElementAux(options.non_zero_floor));
-    mse = cutlass::reference::host::TensorMSE(tensor_aux.host_view(), tensor_ref_aux.host_view());
-    mre = cutlass::reference::host::TensorMRE(tensor_aux.host_view(), tensor_ref_aux.host_view());
-    max_error = cutlass::reference::host::TensorGreatestError(tensor_aux.host_view(), tensor_ref_aux.host_view());
-    std::cout << "  Aux MSE: " << mse << ", MRE: " << mre << ", greatest error: " << max_error << std::endl;
-    if (IsAuxFp8 && options.save_amax) {
-      abs_max_aux.sync_host();
-      std::cout << "  Abs max aux: " << abs_max_aux.at(cutlass::make_Coord(0)) << ", reference: " << reference_abs_max_aux.at(cutlass::make_Coord(0)) << std::endl;
-      passed &= cutlass::relatively_equal(abs_max_aux.at(cutlass::make_Coord(0)), reference_abs_max_aux.at(cutlass::make_Coord(0)), ElementScalar(options.epsilon), ElementScalar(options.non_zero_floor));
-    }
-  }
-
   return passed;
 }
-#endif
 
 /// Execute a given example GEMM computation
 template <typename Gemm>
@@ -533,7 +502,6 @@ int run(Options &options)
   return 0;
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
-  #if 0
   Result result;
   if (options.verify) {
     result.passed = verify(options);
@@ -566,7 +534,6 @@ int run(Options &options)
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
-  #endif 
 
 
   return 0; // result.passed;
