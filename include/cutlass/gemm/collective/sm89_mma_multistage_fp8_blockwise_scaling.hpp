@@ -521,7 +521,7 @@ struct CollectiveMma<
       copy(smem_tiled_copy_B, tCsB_p(_,_,Int<0>{}), tCrB_copy_view(_,_,Int<0>{}));
     }
 
-    //GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
+    GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
 
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > -(DispatchPolicy::Stages-1); --k_tile_count)
@@ -530,7 +530,7 @@ struct CollectiveMma<
       //
       // Note, the for_each() function is required here to ensure `k_block` is of type Int<N>.
 
-      //warpgroup_fence_operand(accumulation());
+      warpgroup_fence_operand(accumulation());
 
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
       {
@@ -598,25 +598,25 @@ struct CollectiveMma<
         cute::transform(tCrA(_,_,k_block), TransformA{});
         cute::transform(tCrB(_,_,k_block), TransformB{});
         // Thread-level register gemm for k_block
-        cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), accum);
+        cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), accumulation());
       });
 
-      //warpgroup_fence_operand(accumulation());
+      warpgroup_fence_operand(accumulation());
       
 
-      // if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-      //   ElementBlockScale scale_ab = tCrSFA(_0{});
-      //   scale_if_needed(accumulation, scale_ab);
-      // }
-      // if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-      //   scale_if_needed(accumulation, tCrSFA);
-      // }
-      // if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-      //   scale_if_needed(accumulation, tCrSFB);
-      // }
-      // if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-      //   scale_if_needed(accumulation, tCrSFA, tCrSFB);
-      // }
+      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
+        ElementBlockScale scale_ab = tCrSFA(_0{});
+        scale_if_needed(accumulation, scale_ab);
+      }
+      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
+        scale_if_needed(accumulation, tCrSFA);
+      }
+      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
+        scale_if_needed(accumulation, tCrSFB);
+      }
+      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
+        scale_if_needed(accumulation, tCrSFA, tCrSFB);
+      }
     }
 
     cp_async_wait<0>();
