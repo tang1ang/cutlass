@@ -39,9 +39,6 @@
 namespace cutlass::gemm::collective {
 
 template <
-  class ArchTag,
-  class OpClass,
-  conv::Operator,
   class ElementA,
   class GmemLayoutPairA,
   int AlignmentA,
@@ -86,6 +83,10 @@ struct CollectiveBuilder<
   static_assert(size<1,0>(cute::remove_pointer_t<GmemLayoutSFATag>{}) == 
                 size<1,0>(cute::remove_pointer_t<GmemLayoutSFBTag>{}), 
       "SFA and SFB must have equivalent SF vector sizes along K");
+
+  static constexpr auto ScaleGranularityM = size<0,0>(cute::remove_pointer_t<GmemLayoutSFATag>{});
+  static constexpr auto ScaleGranularityN = size<0,0>(cute::remove_pointer_t<GmemLayoutSFBTag>{});
+  static constexpr auto ScaleGranularityK = size<1,0>(cute::remove_pointer_t<GmemLayoutSFATag>{});
 
   static_assert(is_static<TileShape_MNK>::value);
   static constexpr bool IsFP8Input = detail::is_input_fp8<ElementA, ElementB>();
