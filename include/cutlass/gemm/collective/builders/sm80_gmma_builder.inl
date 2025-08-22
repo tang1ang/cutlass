@@ -67,7 +67,7 @@ struct CollectiveBuilder<
     cute::enable_if_t<
       cute::is_same_v<KernelScheduleType, KernelMultistageFP8BlockScaledAccum>>
 > {
-  static constexpr int PipelineStages = 4;
+  static constexpr int PipelineStages = 3;
   static constexpr int WARP_M = 2;
   static constexpr int WARP_N = 2;
   static constexpr int NUM_WARPS = WARP_M * WARP_N;
