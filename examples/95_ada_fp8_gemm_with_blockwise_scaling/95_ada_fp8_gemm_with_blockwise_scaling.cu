@@ -547,7 +547,6 @@ int run(Options &options)
   else {
     result.passed = true;
   }
-  #endif 
 
   // Run profiling loop
   if (options.iterations > 0)
@@ -571,6 +570,8 @@ int run(Options &options)
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
+  #endif 
+
 
   return 0; // result.passed;
 }
