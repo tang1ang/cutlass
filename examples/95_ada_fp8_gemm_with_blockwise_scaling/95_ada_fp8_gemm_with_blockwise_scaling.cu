@@ -439,8 +439,7 @@ bool verify(const Options &options) {
       unused_t, // bias
       unused_t,
       unused_t, // valpha
-      unused_t, // vbeta
-      ActivationFunctor
+      unused_t // vbeta
   > epilogue_params;
 
   epilogue_params.C = C;
