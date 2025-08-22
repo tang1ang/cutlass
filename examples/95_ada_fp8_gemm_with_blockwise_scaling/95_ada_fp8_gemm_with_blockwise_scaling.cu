@@ -498,8 +498,6 @@ int run(Options &options)
   // Correctness / Warmup iteration
   CUTLASS_CHECK(gemm.run());
 
-  return 0;
-
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
   if (options.verify) {
