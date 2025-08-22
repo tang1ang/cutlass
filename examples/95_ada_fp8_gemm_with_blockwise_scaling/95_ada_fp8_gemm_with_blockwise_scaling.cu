@@ -464,15 +464,15 @@ bool verify(const Options &options) {
   //cute::print_tensor(cute::make_tensor(tensor_D.host_data(), cute::make_layout(cute::make_shape(1, options.n))));
   //cute::print_tensor(cute::make_tensor(tensor_ref_D.host_data(), cute::make_layout(cute::make_shape(1, options.n))));
   // cutlass::detail::relatively_equal()
-  for(int m = 0; m < options.m; ++m) {
-    for(int n = 0; n < options.n; ++n) {
-      ElementD ref = tensor_ref_D.host_data(m * options.n + n);
-      ElementD val = tensor_D.host_data(m * options.n + n);
-      if (!cutlass::detail::relatively_equal(ref, val, ElementD(options.epsilon), ElementD(options.non_zero_floor))) {
-        std::cout << "Mismatch at (" << m << ", " << n << "): ref = " << ref << ", val = " << val << std::endl;
-      }
-    }
-  }
+  // for(int m = 0; m < options.m; ++m) {
+  //   for(int n = 0; n < options.n; ++n) {
+  //     ElementD ref = tensor_ref_D.host_data(m * options.n + n);
+  //     ElementD val = tensor_D.host_data(m * options.n + n);
+  //     if (!cutlass::relatively_equal(ref, val, ElementD(options.epsilon), ElementD(options.non_zero_floor))) {
+  //       std::cout << "Mismatch at (" << m << ", " << n << "): ref = " << ref << ", val = " << val << std::endl;
+  //     }
+  //   }
+  // }
 
   passed &= cutlass::reference::host::TensorRelativelyEquals(tensor_D.host_view(), tensor_ref_D.host_view(), ElementD(options.epsilon), ElementD(options.non_zero_floor));
   double mse = cutlass::reference::host::TensorMSE(tensor_D.host_view(), tensor_ref_D.host_view());
