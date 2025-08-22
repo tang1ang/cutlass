@@ -273,6 +273,11 @@ bool initialize_scale_tensor(
   else if (dist_kind == cutlass::Distribution::AllZeros) {
     cutlass::reference::host::TensorFill(view);
   }
+
+  else if (dist_kind == cutlass::Distribution::AllOnes) {
+    cutlass::reference::host::TensorFill(view, Element(1.0));
+  }
+
   else if (dist_kind == cutlass::Distribution::Identity) {
 
     cutlass::reference::host::TensorFillIdentity(view);
@@ -324,8 +329,8 @@ void initialize(const Options &options) {
   cutlass::Distribution::Kind dist_A = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_B = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_C = cutlass::Distribution::Uniform;
-  cutlass::Distribution::Kind dist_scaleA = cutlass::Distribution::Uniform;
-  cutlass::Distribution::Kind dist_scaleB = cutlass::Distribution::Uniform;
+  cutlass::Distribution::Kind dist_scaleA = cutlass::Distribution::AllOnes;
+  cutlass::Distribution::Kind dist_scaleB = cutlass::Distribution::AllOnes;
 
   initialize_tensor(tensor_A.host_view(), dist_A, seed + 2022);
   initialize_tensor(tensor_B.host_view(), dist_B, seed + 2023);
