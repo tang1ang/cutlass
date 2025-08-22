@@ -458,6 +458,10 @@ bool verify(const Options &options) {
   // compare_reference
   bool passed = true;
   tensor_D.sync_host();
+
+  cute::print_tensor(cute::make_tensor(tensor_D.host_data(), cute::make_layout(cute::make_shape(1, options.n))));
+  cute::print_tensor(cute::make_tensor(tensor_ref_D.host_data(), cute::make_layout(cute::make_shape(1, options.n))));
+
   passed &= cutlass::reference::host::TensorRelativelyEquals(tensor_D.host_view(), tensor_ref_D.host_view(), ElementD(options.epsilon), ElementD(options.non_zero_floor));
   double mse = cutlass::reference::host::TensorMSE(tensor_D.host_view(), tensor_ref_D.host_view());
   double mre = cutlass::reference::host::TensorMRE(tensor_D.host_view(), tensor_ref_D.host_view());
