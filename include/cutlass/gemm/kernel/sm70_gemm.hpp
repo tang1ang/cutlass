@@ -240,7 +240,7 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
 
     // Perform the collective scoped MMA
 
-    if constexpr (cute::is_same_v<CollectiveMainloop::DispatchPolicy, MainloopSm89CpAsyncBlockScalingFP8<CollectiveMainloop::DispatchPolicy::Stages>>) {
+    if constexpr (cute::is_same_v<typename CollectiveMainloop::DispatchPolicy, MainloopSm89CpAsyncBlockScalingFP8<CollectiveMainloop::DispatchPolicy::Stages>>) {
 
       CollectiveMainloop collective_mma(params.mainloop);
       collective_mma(
