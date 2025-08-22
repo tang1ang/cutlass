@@ -379,7 +379,7 @@ struct CollectiveMma<
     Tensor tSFBcSFB = thr_scale_copy_b.partition_S(cSFB);  // (BCPY,BCPY_N,BCPY_K) -> (blk_n,blk_k)
 
     Tensor tSFAcSFA_compact = filter_zeros(tSFAcSFA, tSFAsSFA(_,_,_,_0{}).stride());  // (BCPY, ACPY_M / SFVecSizeM, ACPY_K / SFVecSizeK) -> (blk_m,blk_k)
-    Tensor tSFBcSFB_compact = filter_zeros(tSFBcSFB, tSFBcSFB(_,_,_,_0{}).stride());  // (BCPY, BCPY_N / SFVecSizeM, BCPY_K / SFVecSizeK) -> (blk_m,blk_k)
+    Tensor tSFBcSFB_compact = filter_zeros(tSFBcSFB, tSFBsSFB(_,_,_,_0{}).stride());  // (BCPY, BCPY_N / SFVecSizeM, BCPY_K / SFVecSizeK) -> (blk_m,blk_k)
     
     bool load_sfa = thread_idx < cute::min(_32{}, ScaleMsPerTile);
 
