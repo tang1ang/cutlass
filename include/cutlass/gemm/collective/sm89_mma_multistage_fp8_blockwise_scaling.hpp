@@ -532,7 +532,7 @@ struct CollectiveMma<
       //
       // Note, the for_each() function is required here to ensure `k_block` is of type Int<N>.
 
-      tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+      clear(accumulation());
 
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
       {
