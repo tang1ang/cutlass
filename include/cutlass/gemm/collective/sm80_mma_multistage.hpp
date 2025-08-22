@@ -446,11 +446,6 @@ struct CollectiveMma<
 
   CollectiveMma() = default;
 
-  CollectiveMma(Params const& params_)
-  {
-    (void) params_;
-  }
-
 
   template <class ProblemShape>
   static constexpr Params

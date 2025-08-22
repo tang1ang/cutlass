@@ -194,7 +194,7 @@ struct CollectiveMma<
   //
   // Methods
   //
-
+  CUTLASS_DEVICE
   CollectiveMma(Params const& params_) : params(params_) {}
 
   template <class ProblemShape>
