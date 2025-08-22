@@ -104,7 +104,7 @@ struct CollectiveBuilder<
   static constexpr cute::GMMA::Major GmmaMajorB = detail::gmma_ss_tag_to_major_B<ElementBMma, GmemLayoutBTag>();
 
   using TiledMma = decltype(cute::make_tiled_mma(cute::SM89_16x8x32_F32E4M3E4M3F32_TN{}, Layout<Shape<Int<WARP_M>, Int<WARP_N>, _1>>{},
-      Tile<Int<MMA_WARP_M>, Int<MMA_WARP_N>, Int<MMA_WARP_K>>));
+      Tile<Int<MMA_WARP_M>, Int<MMA_WARP_N>, Int<MMA_WARP_K>>{}));
 
   
   using AlignmentTypeA = cute::uint_byte_t<static_cast<int>(sizeof(ElementA)) * AlignmentA>;
