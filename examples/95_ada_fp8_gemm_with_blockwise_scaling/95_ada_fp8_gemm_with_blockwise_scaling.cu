@@ -97,11 +97,6 @@ using         ElementD    = ElementC;
 using         LayoutD     = LayoutC;
 constexpr int AlignmentD  = AlignmentC;
 
-// Auxiliary matrix configuration and other fusion types
-using         ElementAux   = ElementC;
-using         LayoutAux    = LayoutC;
-using         ElementAmax  = float;
-using         ElementBias  = float;
 
 // Core kernel configurations
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
@@ -172,6 +167,8 @@ StrideD stride_D;
 LayoutSFA layout_SFA;
 LayoutSFB layout_SFB;
 uint64_t seed;
+
+using LayoutScalar = cutlass::layout::PackedVectorLayout;
 
 cutlass::HostTensor<ElementA  , LayoutA  > tensor_A;
 cutlass::HostTensor<ElementB  , LayoutB  > tensor_B;
@@ -301,7 +298,7 @@ bool initialize_scale_tensor(
 }
 
 /// Initialize operands to be used in the GEMM and reference GEMM
-void initialize(const Options<RasterOrderOptions> &options) {
+void initialize(const Options &options) {
 
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(options.n, options.k, options.l));
@@ -360,7 +357,7 @@ void initialize(const Options<RasterOrderOptions> &options) {
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
-typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &options)
+typename Gemm::Arguments args_from_options(const Options &options)
 {
   typename Gemm::Arguments arguments{
     cutlass::gemm::GemmUniversalMode::kGemm,
@@ -394,7 +391,7 @@ typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &op
 }
 
 #if 0
-bool verify(const Options<RasterOrderOptions> &options) {
+bool verify(const Options &options) {
   //
   // Compute reference output
   //
