@@ -64,6 +64,8 @@
 #include "cutlass/util/reference/host/tensor_norm.h"
 #include "cutlass/util/reference/host/gett.hpp"
 
+#include "cutlass/relatively_equal.h"
+
 // Includes from examples directory
 #include "helper.h"
 #include "ada_fp8_commandline.hpp"
